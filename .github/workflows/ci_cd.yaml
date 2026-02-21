@@ -1,0 +1,137 @@
+name: CI/CD to EKS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AWS_REGION:        ${{ secrets.AWS_REGION }}
+  EKS_CLUSTER_NAME:  ${{ secrets.EKS_CLUSTER_NAME }}
+  K8S_NAMESPACE:     ${{ secrets.K8S_NAMESPACE }}
+  DOCKER_ORG:        ${{ secrets.DOCKER_ORG }}
+  INGRESS_HOST:      ${{ secrets.INGRESS_HOST }}
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Job 1: Build & push images to Docker Hub
+  # ──────────────────────────────────────────────
+  build:
+    name: Build & Push (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [api, ui]
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.app }}
+          push: true
+          tags: |
+            ${{ env.DOCKER_ORG }}/basic3tier-${{ matrix.app }}:${{ github.sha }}
+            ${{ env.DOCKER_ORG }}/basic3tier-${{ matrix.app }}:latest
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+
+  # ──────────────────────────────────────────────
+  # Job 2: Deploy to EKS
+  # ──────────────────────────────────────────────
+  deploy:
+    name: Deploy to EKS
+    runs-on: ubuntu-latest
+    needs: [build]
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
+
+      - name: Ensure namespace exists
+        run: kubectl get ns "$K8S_NAMESPACE" || kubectl create ns "$K8S_NAMESPACE"
+
+      - name: Apply postgres
+        run: |
+          # deployment postgres
+          kubectl apply -n "$K8S_NAMESPACE" -f k8s/postgres-deployment.yaml
+      
+      - name: Apply Ingres
+        run: |
+          # Ingres
+          kubectl apply -n "$K8S_NAMESPACE" -f k8s/app-ingress.yaml
+      - name: Install NGINX Ingress Controller
+        run: |
+          # Deployment ingress controller
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+
+
+      - name: Verify Ingress Exists
+        run: |
+            kubectl get ingress app-ingress -n "$K8S_NAMESPACE"
+
+      - name: Verify Ingress Has Address
+        run: |
+          HOST=$(kubectl get ingress app-ingress -n "$K8S_NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+    
+          if [ -z "$HOST" ]; then
+            echo "Ingress not ready!"
+            exit 1
+          fi
+
+          echo "Ingress ready at $HOST"
+      - name: Apply seployment (ui + api)
+        run: |
+          # Deployment ui + api
+          kubectl apply -n "$K8S_NAMESPACE" -f k8s/api-deployment.yaml
+          kubectl apply -n "$K8S_NAMESPACE" -f k8s/ui-deployment.yaml
+
+      - name: Set images to new tag
+        run: |
+          TAG=${{ github.sha }}
+          kubectl -n "$K8S_NAMESPACE" set image deployment/api-deployment  api-container="${DOCKER_ORG}/basic3tier-api:${TAG}"
+          kubectl -n "$K8S_NAMESPACE" set image deployment/ui-deployment ui-container="${DOCKER_ORG}/basic3tier-ui:${TAG}"
+             
+      - name: Wait for rollouts
+        run: |
+          kubectl -n "$K8S_NAMESPACE" rollout status deploy/api-deployment  --timeout=120s
+          kubectl -n "$K8S_NAMESPACE" rollout status deploy/ui-deployment --timeout=120s
+    
+      - name: Smoke test
+        run: |
+         STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${INGRESS_HOST}/api/user")
+         if [ "$STATUS" -eq 200 ]; then
+           echo "✓ Backend reachable (200 OK)"
+         else
+           echo "✗ Backend unreachable (Status: $STATUS)"
+           exit 1
+         fi
+ 
+
+
+           
+
+          
