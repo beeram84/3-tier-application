@@ -1,3 +1,7 @@
+# =================================================================
+# FILE 2: k8s/ui-deployment.yaml
+# =================================================================
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -18,9 +22,16 @@ spec:
         image: sribeeram/basic3tier-ui:latest
         ports:
         - containerPort: 80
-        env:              ← 8 SPACES! (at container level)
+        env:
         - name: API_URL
-        value: "http://k8s-threetie-uiingres-5cb5d86086-766427848.us-east-1.elb.amazonaws.com/"
+          value: "http://k8s-threetie-uiingres-5cb5d86086-766427848.us-east-1.elb.amazonaws.com/"
+        resources:
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+          requests:
+            memory: "128Mi"
+            cpu: "250m"
 ---
 apiVersion: v1
 kind: Service
@@ -31,6 +42,6 @@ spec:
   selector:
     app: basic3tier-ui
   ports:
-    - port: 80
-      targetPort: 80
+  - port: 80
+    targetPort: 80
   type: ClusterIP
