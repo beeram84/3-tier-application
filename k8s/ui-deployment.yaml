@@ -24,7 +24,7 @@ spec:
         - containerPort: 80
         env:
         - name: API_URL
-          value: "http://k8s-threetie-uiingres-5cb5d86086-766427848.us-east-1.elb.amazonaws.com/"
+          value: "http://k8s-traefik-traefik-9c5c1a44ef-84bef23f98e80506.elb.us-east-1.amazonaws.com/"
         resources:
           limits:
             memory: "256Mi"
