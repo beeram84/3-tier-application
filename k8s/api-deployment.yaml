@@ -18,8 +18,8 @@ spec:
         image: sribeeram/basic3tier-api:latest
         ports:
         - containerPort: 80
-        env:
-        - name: ConnectionStrings__Basic3Tier
+          env:
+          - name: ConnectionStrings__Basic3Tier
           value: "Host=postgres-service;Port=5432;Database=basic3tier;Username=postgres;Password=admin123"
         
 ---
