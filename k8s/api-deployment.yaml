@@ -1,12 +1,4 @@
-  # =================================================================
-# STEP 1: Create the secret first by running this command:
-#
-# kubectl create secret generic api-db-secret \
-#   --from-literal=connection-string="Host=postgres-service;Port=5432;Database=basic3tier;Username=postgres;Password=YOUR_REAL_PASSWORD" \
-#   -n three-tier
-#
-# Replace YOUR_REAL_PASSWORD with your actual Postgres password.
-# =================================================================
+
 
 apiVersion: apps/v1
 kind: Deployment
@@ -31,14 +23,7 @@ spec:
         - containerPort: 80
         env:
         - name: ConnectionStrings__Basic3Tier
-          valueFrom:
-            secretKeyRef:
-              name: api-db-secret
-              key: connection-string
-        - name: AWS_DEFAULT_REGION
-          value: "us-east-1"
-        - name: ASPNETCORE_ENVIRONMENT
-          value: "Production"
+          value: "Host=postgres-service;Port=5432;Database=basic3tier;Username=postgres;Password=admin123"
         resources:
           limits:
             memory: "512Mi"
